@@ -1,0 +1,87 @@
+name: .NET 8 CI/CD Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore src/HelloWorld/HelloWorld.csproj
+      - name: Build
+        run: dotnet build src/HelloWorld/HelloWorld.csproj --configuration Release --no-restore
+      - name: Run sample app
+        run: dotnet run --project src/HelloWorld/HelloWorld.csproj --configuration Release
+
+  deploy_develop:
+    needs: build
+    if: github.event.pull_request != null
+    runs-on: ubuntu-latest
+    environment:
+      name: develop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      - name: Authenticate with OIDC for develop
+        run: |
+          echo "Authenticate to target cloud using OIDC federated credentials for develop"
+      - name: Publish app for develop
+        run: |
+          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o publish/develop
+          echo "Published develop artifact to publish/develop"
+      - name: Deploy to develop environment
+        run: |
+          echo "Deploy logic for develop goes here. Use the OIDC federated credentials configured for the develop environment."
+
+  deploy_qa:
+    needs: deploy_develop
+    if: github.event.pull_request != null
+    runs-on: ubuntu-latest
+    environment:
+      name: qa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      - name: Authenticate with OIDC for qa
+        run: |
+          echo "Authenticate to target cloud using OIDC federated credentials for qa"
+      - name: Publish app for qa
+        run: |
+          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o publish/qa
+          echo "Published qa artifact to publish/qa"
+      - name: Deploy to qa environment
+        run: |
+          echo "Deploy logic for qa goes here. Use the OIDC federated credentials configured for the qa environment."
+
+  deploy_prod:
+    needs: deploy_qa
+    if: github.event.pull_request != null
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      - name: Authenticate with OIDC for prod
+        run: |
+          echo "Authenticate to target cloud using OIDC federated credentials for prod"
+      - name: Publish app for prod
+        run: |
+          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o publish/prod
+          echo "Published prod artifact to publish/prod"
+      - name: Deploy to prod environment
+        run: |
+          echo "Deploy logic for prod goes here. Use the OIDC federated credentials configured for the prod environment."
