@@ -3,7 +3,7 @@ name: Azure Function App CI-CD
 on:
   push:
     branches:
-      - development
+      - develop
       - qa
 
 permissions:
@@ -46,10 +46,10 @@ jobs:
   # DEPLOY TO DEVELOPMENT
   # =========================
   deploy-dev:
-    if: github.ref == 'refs/heads/development'
+    if: github.ref == 'refs/heads/develop'
     needs: build
     runs-on: ubuntu-latest
-    environment: development
+    environment: develop
 
     steps:
       - name: Download Artifact
