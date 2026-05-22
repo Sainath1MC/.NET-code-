@@ -1,0 +1,101 @@
+name: Azure Function App CI-CD
+
+on:
+  push:
+    branches:
+      - development
+      - qa
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  # ========================
+  # CI PIPELINE
+  # =========================
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      - name: Build Solution
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish Function App
+        run: dotnet publish --configuration Release --output ./publish
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: functionapp
+          path: ./publish
+
+  # =========================
+  # DEPLOY TO DEVELOPMENT
+  # =========================
+  deploy-dev:
+    if: github.ref == 'refs/heads/development'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: functionapp
+          path: ./publish
+
+      - name: Azure Login DEV
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID_DEV }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      - name: Deploy Function App DEV
+        uses: Azure/functions-action@v2
+        with:
+          app-name: YOUR-DEV-FUNCTIONAPP
+          package: './publish'
+
+  # =========================
+  # DEPLOY TO QA
+  # =========================
+  deploy-qa:
+    if: github.ref == 'refs/heads/qa'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: qa
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: functionapp
+          path: ./publish
+
+      - name: Azure Login QA
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_QA }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID_QA }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_QA }}
+
+      - name: Deploy Function App QA
+        uses: Azure/functions-action@v2
+        with:
+          app-name: YOUR-QA-FUNCTIONAPP
+          package: './publish'
