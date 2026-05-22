@@ -1,87 +1,101 @@
-name: .NET 8 CI/CD Pipeline
+name: Azure Function App CI-CD
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
+  push:
+    branches:
+      - development
+      - qa
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
+
+  # =========================
+  # CI PIPELINE
+  # =========================
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Restore
-        run: dotnet restore src/HelloWorld/HelloWorld.csproj
-      - name: Build
-        run: dotnet build src/HelloWorld/HelloWorld.csproj --configuration Release --no-restore
-      - name: Run sample app
-        run: dotnet run --project src/HelloWorld/HelloWorld.csproj --configuration Release
 
-  deploy_develop:
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      - name: Build Solution
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish Function App
+        run: dotnet publish --configuration Release --output ./publish
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: functionapp
+          path: ./publish
+
+  # =========================
+  # DEPLOY TO DEVELOPMENT
+  # =========================
+  deploy-dev:
+    if: github.ref == 'refs/heads/development'
     needs: build
-    if: github.event.pull_request != null
     runs-on: ubuntu-latest
-    environment:
-      name: develop
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '8.0.x'
-      - name: Authenticate with OIDC for develop
-        run: |
-          echo "Authenticate to target cloud using OIDC federated credentials for develop"
-      - name: Publish app for develop
-        run: |
-          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o publish/develop
-          echo "Published develop artifact to publish/develop"
-      - name: Deploy to develop environment
-        run: |
-          echo "Deploy logic for develop goes here. Use the OIDC federated credentials configured for the develop environment."
+    environment: development
 
-  deploy_qa:
-    needs: deploy_develop
-    if: github.event.pull_request != null
-    runs-on: ubuntu-latest
-    environment:
-      name: qa
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v3
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
         with:
-          dotnet-version: '8.0.x'
-      - name: Authenticate with OIDC for qa
-        run: |
-          echo "Authenticate to target cloud using OIDC federated credentials for qa"
-      - name: Publish app for qa
-        run: |
-          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o publish/qa
-          echo "Published qa artifact to publish/qa"
-      - name: Deploy to qa environment
-        run: |
-          echo "Deploy logic for qa goes here. Use the OIDC federated credentials configured for the qa environment."
+          name: functionapp
+          path: ./publish
 
-  deploy_prod:
-    needs: deploy_qa
-    if: github.event.pull_request != null
-    runs-on: ubuntu-latest
-    environment:
-      name: prod
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v3
+      - name: Azure Login DEV
+        uses: azure/login@v2
         with:
-          dotnet-version: '8.0.x'
-      - name: Authenticate with OIDC for prod
-        run: |
-          echo "Authenticate to target cloud using OIDC federated credentials for prod"
-      - name: Publish app for prod
-        run: |
-          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o publish/prod
-          echo "Published prod artifact to publish/prod"
-      - name: Deploy to prod environment
-        run: |
-          echo "Deploy logic for prod goes here. Use the OIDC federated credentials configured for the prod environment."
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID_DEV }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      - name: Deploy Function App DEV
+        uses: Azure/functions-action@v1
+        with:
+          app-name: YOUR-DEV-FUNCTIONAPP
+          package: './publish'
+
+  # =========================
+  # DEPLOY TO QA
+  # =========================
+  deploy-qa:
+    if: github.ref == 'refs/heads/qa'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: qa
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: functionapp
+          path: ./publish
+
+      - name: Azure Login QA
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_QA }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID_QA }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_QA }}
+
+      - name: Deploy Function App QA
+        uses: Azure/functions-action@v1
+        with:
+          app-name: YOUR-QA-FUNCTIONAPP
+          package: './publish'
