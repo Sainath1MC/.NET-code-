@@ -66,7 +66,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
 
       - name: Deploy Function App DEV
-        uses: Azure/functions-action@v1
+        uses: Azure/functions-action@v2
         with:
           app-name: YOUR-DEV-FUNCTIONAPP
           package: './publish'
@@ -95,7 +95,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_QA }}
 
       - name: Deploy Function App QA
-        uses: Azure/functions-action@v1
+        uses: Azure/functions-action@v2
         with:
           app-name: YOUR-QA-FUNCTIONAPP
           package: './publish'
