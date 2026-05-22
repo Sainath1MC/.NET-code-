@@ -12,7 +12,7 @@ permissions:
 
 jobs:
 
-  # ========================
+  # =========================
   # CI PIPELINE
   # =========================
   build:
@@ -29,18 +29,21 @@ jobs:
 
       - name: Restore Dependencies
         run: dotnet restore
+        working-directory: ./src/HelloWorld
 
       - name: Build Solution
         run: dotnet build --configuration Release --no-restore
+        working-directory: ./src/HelloWorld
 
       - name: Publish Function App
         run: dotnet publish --configuration Release --output ./publish
+        working-directory: ./src/HelloWorld
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: functionapp
-          path: ./publish
+          path: ./src/HelloWorld/publish
 
   # =========================
   # DEPLOY TO DEVELOPMENT
@@ -49,14 +52,14 @@ jobs:
     if: github.ref == 'refs/heads/develop'
     needs: build
     runs-on: ubuntu-latest
-    environment: develop
+    environment: development
 
     steps:
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: functionapp
-          path: ./publish
+          path: ./src/HelloWorld/publish
 
       - name: Azure Login DEV
         uses: azure/login@v2
@@ -66,10 +69,10 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
 
       - name: Deploy Function App DEV
-        uses: Azure/functions-action@v2
+        uses: Azure/functions-action@v1
         with:
           app-name: YOUR-DEV-FUNCTIONAPP
-          package: './publish'
+          package: './src/HelloWorld/publish'
 
   # =========================
   # DEPLOY TO QA
@@ -85,7 +88,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: functionapp
-          path: ./publish
+          path: ./src/HelloWorld/publish
 
       - name: Azure Login QA
         uses: azure/login@v2
@@ -95,7 +98,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_QA }}
 
       - name: Deploy Function App QA
-        uses: Azure/functions-action@v2
+        uses: Azure/functions-action@v1
         with:
           app-name: YOUR-QA-FUNCTIONAPP
-          package: './publish'
+          package: './src/HelloWorld/publish'
