@@ -1,10 +1,9 @@
-name: Azure Function App CI-CD
+name: CI-CD
 
 on:
   push:
     branches:
       - develop
-      - qa
 
 permissions:
   id-token: write
@@ -16,7 +15,7 @@ jobs:
   # CI PIPELINE
   # =========================
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Code
@@ -45,60 +44,31 @@ jobs:
           name: functionapp
           path: ./src/HelloWorld/publish
 
-  # =========================
-  # DEPLOY TO DEVELOPMENT
-  # =========================
-  deploy-dev:
-    if: github.ref == 'refs/heads/develop'
-    needs: build
-    runs-on: ubuntu-latest
-    environment: development
+  # # =========================
+  # # DEPLOY TO DEVELOPMENT
+  # # =========================
+  # deploy-dev:
+  #   if: github.ref == 'refs/heads/develop'
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   environment: development
 
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: functionapp
-          path: ./src/HelloWorld/publish
+  #   steps:
+  #     - name: Download Artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: functionapp
+  #         path: ./src/HelloWorld/publish
 
-      - name: Azure Login DEV
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID_DEV }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
+  #     - name: Azure Login DEV
+  #       uses: azure/login@v2
+  #       with:
+  #         client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+  #         tenant-id: ${{ secrets.AZURE_TENANT_ID_DEV }}
+  #         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
 
-      - name: Deploy Function App DEV
-        uses: Azure/functions-action@v1
-        with:
-          app-name: YOUR-DEV-FUNCTIONAPP
-          package: './src/HelloWorld/publish'
-
-  # =========================
-  # DEPLOY TO QA
-  # =========================
-  deploy-qa:
-    if: github.ref == 'refs/heads/qa'
-    needs: build
-    runs-on: ubuntu-latest
-    environment: qa
-
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: functionapp
-          path: ./src/HelloWorld/publish
-
-      - name: Azure Login QA
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID_QA }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID_QA }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_QA }}
-
-      - name: Deploy Function App QA
-        uses: Azure/functions-action@v1
-        with:
-          app-name: YOUR-QA-FUNCTIONAPP
-          package: './src/HelloWorld/publish'
+  #     - name: Deploy Function App DEV
+  #       uses: Azure/functions-action@v1
+  #       with:
+  #         app-name: YOUR-DEV-FUNCTIONAPP
+  #         package: './src/HelloWorld/publish'
