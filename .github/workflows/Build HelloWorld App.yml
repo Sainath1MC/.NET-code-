@@ -53,7 +53,10 @@ jobs:
   package:
     name: Package Artifact
     runs-on: ubuntu-latest
+<<<<<<< HEAD
     needs: build
+=======
+>>>>>>> 5d5f23083711a6fb954847f4a42c2fdf21856caa
     if: success()
     steps:
       - uses: actions/checkout@v4
