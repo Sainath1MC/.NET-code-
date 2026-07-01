@@ -81,7 +81,7 @@ jobs:
     name: Trigger Deploy
     needs: package
     if: github.event_name == 'push'
-    uses: ./.github/workflows/CD.yml
+    uses: ./.github/workflows/cd.yml
     with:
       branch: ${{ github.ref_name }}
       run_id: ${{ github.run_id }}
