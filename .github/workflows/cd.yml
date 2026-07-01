@@ -18,8 +18,9 @@ permissions:
 jobs:
   deploy-dev:
     name: Deploy to development environment
-    if: ${{ inputs.branch == 'Development' }}
+    if: ${{ inputs.branch == 'develop' }}
     runs-on: ubuntu-latest
+    environment: development
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,46 +41,47 @@ jobs:
           tenant-id: ${{ secrets.DEV_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.DEV_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy to DEV
-        run: |
-          echo "Add your deployment step here (e.g. az webapp deploy, azure/functions-action, etc.)"
-          # Example:
-          # az webapp deploy --resource-group <rg> --name <app-name> --src-path ./publish/helloworld-artifact.zip --type zip
+      - name: Deploy to Azure Function App (DEV)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.DEV_FUNCTION_APP_NAME }}
+          package: ./publish/helloworld-artifact.zip
 
       - name: Logout from Azure
         if: always()
         run: az logout
 
-# For QA Environment
+  deploy-qa:
+    name: Deploy to QA environment
+    if: ${{ inputs.branch == 'QA' }}
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-# deploy-qa:
-#   name: Deploy to QA environment
-#   if: ${{ inputs.branch == 'QA' }}
-#   runs-on: ubuntu-latest
-#   steps:
-#     - name: Checkout code
-#       uses: actions/checkout@v4
-#
-#     - name: Download artifact
-#       uses: actions/download-artifact@v4
-#       with:
-#         name: helloworld-artifact
-#         path: ./publish
-#         repository: ${{ github.repository }}
-#         run-id: ${{ inputs.run_id }}
-#         github-token: ${{ secrets.GITHUB_TOKEN }}
-#
-#     - name: Login to Azure
-#       uses: azure/login@v2
-#       with:
-#         client-id: ${{ secrets.QA_AZURE_CLIENT_ID }}
-#         tenant-id: ${{ secrets.QA_AZURE_TENANT_ID }}
-#         subscription-id: ${{ secrets.QA_AZURE_SUBSCRIPTION_ID }}
-#
-#     - name: Deploy to QA
-#       run: |
-#         echo "Add your QA deployment step here"
-#
-#     - name: Logout from Azure
-#       if: always()
-#       run: az logout
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helloworld-artifact
+          path: ./publish
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.QA_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.QA_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.QA_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Function App (QA)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.QA_FUNCTION_APP_NAME }}
+          package: ./publish/helloworld-artifact.zip
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout
