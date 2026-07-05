@@ -1,4 +1,4 @@
-name: Deploy HelloWorld App
+name: Deploy HelloWorld App.
 
 on:
   workflow_call:
