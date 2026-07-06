@@ -20,7 +20,7 @@ jobs:
     name: Deploy to development environment
     if: ${{ inputs.branch == 'develop' }}
     runs-on: ubuntu-latest
-    environment: development
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,7 +56,7 @@ jobs:
   #   name: Deploy to QA environment
   #   if: ${{ inputs.branch == 'QA' }}
   #   runs-on: ubuntu-latest
-  #   environment: qa
+  # 
   #   steps:
   #     - name: Checkout code
   #       uses: actions/checkout@v4
