@@ -50,7 +50,7 @@ jobs:
 
       - name: Logout from Azure
         if: always()
-        run: az logout
+        run: az logout || true
 
   # deploy-qa:
   #   name: Deploy to QA environment

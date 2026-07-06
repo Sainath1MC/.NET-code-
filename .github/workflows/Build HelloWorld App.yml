@@ -85,4 +85,8 @@ jobs:
     with:
       branch: ${{ github.ref_name }}
       run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      DEV_AZURE_CLIENT_ID: ${{ secrets.DEV_AZURE_CLIENT_ID }}
+      DEV_AZURE_TENANT_ID: ${{ secrets.DEV_AZURE_TENANT_ID }}
+      DEV_AZURE_SUBSCRIPTION_ID: ${{ secrets.DEV_AZURE_SUBSCRIPTION_ID }}
+      DEV_AZURE_CLIENT_SECRET: ${{ secrets.DEV_AZURE_CLIENT_SECRET }}
