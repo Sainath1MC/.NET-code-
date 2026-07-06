@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v
         with:
           name: helloworld-artifact
           path: ./publish
@@ -40,7 +40,7 @@ jobs:
           client-id: ${{ secrets.DEV_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.DEV_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.DEV_AZURE_SUBSCRIPTION_ID }}
-          client-secret: ${{ secrets.DEV_AZURE_CLIENT_SECRET }}
+          
 
       - name: Deploy to Azure Function App (DEV)
         uses: Azure/functions-action@v1
