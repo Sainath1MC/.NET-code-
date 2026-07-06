@@ -45,7 +45,7 @@ jobs:
       - name: Deploy to Azure Function App (DEV)
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ vars.DEV_FUNCTION_APP_NAME }}
+          app-name: funcdevbhanu20260705c
           package: ./publish/helloworld-artifact.zip
 
       - name: Logout from Azure
