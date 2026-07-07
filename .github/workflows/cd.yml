@@ -54,7 +54,7 @@ jobs:
 
   deploy-qa:
     name: Deploy to QA environment
-    if: ${{ inputs.branch == 'QA' }}
+    if: ${{ inputs.branch == 'qa' }}
     runs-on: ubuntu-latest
   
     steps:
