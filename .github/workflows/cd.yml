@@ -1,4 +1,4 @@
-name: Deploy HelloWorld App.
+name: Deploy HelloWorld App
 
 on:
   workflow_call:
@@ -7,6 +7,16 @@ on:
         required: true
         type: string
       run_id:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy (develop / qa / main)'
+        required: true
+        type: string
+      run_id:
+        description: 'Run ID of the artifact to deploy'
         required: true
         type: string
 
@@ -20,11 +30,10 @@ jobs:
     name: Deploy to development environment
     if: ${{ inputs.branch == 'develop' }}
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
@@ -33,21 +42,18 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.DEV_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.DEV_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.DEV_AZURE_SUBSCRIPTION_ID }}
-          
 
       - name: Deploy to Azure Function App (DEV)
         uses: Azure/functions-action@v1
         with:
           app-name: funcdevbhanu20260705c
           package: ./publish/helloworld-artifact.zip
-
       - name: Logout from Azure
         if: always()
         run: az logout || true
@@ -56,11 +62,10 @@ jobs:
     name: Deploy to QA environment
     if: ${{ inputs.branch == 'qa' }}
     runs-on: ubuntu-latest
-  
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
@@ -69,21 +74,18 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.QA_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.QA_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.QA_AZURE_SUBSCRIPTION_ID }}
-      
 
       - name: Deploy to Azure Function App (QA)
         uses: Azure/functions-action@v1
         with:
           app-name: funcdevbhanu20260708
           package: ./publish/helloworld-artifact.zip
-
       - name: Logout from Azure
         if: always()
         run: az logout
@@ -93,11 +95,10 @@ jobs:
     if: ${{ inputs.branch == 'main' }}
     runs-on: ubuntu-latest
     environment: production
-  
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
@@ -106,21 +107,18 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.Prod_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.Prod_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.Prod_AZURE_SUBSCRIPTION_ID }}
-      
 
       - name: Deploy to Azure Function App (Prod)
         uses: Azure/functions-action@v1
         with:
           app-name: funcprodbhanu20260708
           package: ./publish/helloworld-artifact.zip
-
       - name: Logout from Azure
         if: always()
         run: az logout
