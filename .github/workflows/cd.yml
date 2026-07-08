@@ -15,10 +15,6 @@ on:
         description: 'Branch to deploy (develop / qa / main)'
         required: true
         type: string
-      run_id:
-        description: 'Run ID of the artifact to deploy'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -26,9 +22,40 @@ permissions:
   actions: read
 
 jobs:
+  resolve-run-id:
+    name: Resolve artifact run ID
+    runs-on: ubuntu-latest
+    outputs:
+      run_id: ${{ steps.get-run.outputs.run_id }}
+      branch: ${{ steps.get-branch.outputs.branch }}
+    steps:
+      - name: Set branch value
+        id: get-branch
+        run: echo "branch=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"
+
+      - name: Get run_id (from input or latest successful build)
+        id: get-run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.run_id }}" ]; then
+            echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
+          else
+            LATEST_RUN_ID=$(gh run list \
+              --repo ${{ github.repository }} \
+              --workflow "Build HelloWorld App" \
+              --branch "${{ inputs.branch }}" \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId')
+            echo "run_id=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy-dev:
     name: Deploy to development environment
-    if: ${{ inputs.branch == 'develop' }}
+    needs: resolve-run-id
+    if: ${{ needs.resolve-run-id.outputs.branch == 'develop' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -40,7 +67,7 @@ jobs:
           name: helloworld-artifact
           path: ./publish
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.run_id }}
+          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Login to Azure
         uses: azure/login@v2
@@ -60,7 +87,8 @@ jobs:
 
   deploy-qa:
     name: Deploy to QA environment
-    if: ${{ inputs.branch == 'qa' }}
+    needs: resolve-run-id
+    if: ${{ needs.resolve-run-id.outputs.branch == 'qa' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -72,7 +100,7 @@ jobs:
           name: helloworld-artifact
           path: ./publish
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.run_id }}
+          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Login to Azure
         uses: azure/login@v2
@@ -92,7 +120,8 @@ jobs:
 
   deploy-prod:
     name: Deploy to prod environment
-    if: ${{ inputs.branch == 'main' }}
+    needs: resolve-run-id
+    if: ${{ needs.resolve-run-id.outputs.branch == 'main' }}
     runs-on: ubuntu-latest
     environment: production
 
@@ -105,7 +134,7 @@ jobs:
           name: helloworld-artifact
           path: ./publish
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.run_id }}
+          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Login to Azure
         uses: azure/login@v2
