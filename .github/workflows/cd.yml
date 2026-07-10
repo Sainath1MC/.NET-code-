@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   resolve-run-id:
-    name: Resolve artifact run ID
+    name:  Artifact ID
     runs-on: ubuntu-latest
     outputs:
       run_id: ${{ steps.get-run.outputs.run_id }}
