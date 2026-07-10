@@ -123,7 +123,7 @@ jobs:
     needs: resolve-run-id
     if: ${{ needs.resolve-run-id.outputs.branch == 'main' }}
     runs-on: ubuntu-latest
-    environment: production
+    environment: Production
 
     steps:
       - name: Checkout code
