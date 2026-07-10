@@ -90,6 +90,7 @@ jobs:
     needs: resolve-run-id
     if: ${{ needs.resolve-run-id.outputs.branch == 'qa' }}
     runs-on: ubuntu-latest
+    environment: qa
 
     steps:
       - name: Checkout code
