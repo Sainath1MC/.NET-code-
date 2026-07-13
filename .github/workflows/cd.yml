@@ -15,10 +15,7 @@ on:
         description: 'Branch to deploy (develop / qa / main)'
         required: true
         type: string
-      run_id:
-        description: 'Optional build run ID to deploy a specific artifact instead of the latest successful build'
-        required: false
-        type: string
+
 
 permissions:
   contents: read
