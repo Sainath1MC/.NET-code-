@@ -12,6 +12,14 @@ on:
       - develop
       - qa
 
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build (develop / qa / main)'
+        required: true
+        type: string
+
+
 permissions:
   id-token: write
   contents: read
