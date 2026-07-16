@@ -25,10 +25,10 @@ jobs:
         shell: bash
         run: |
           echo "Tenant ID Length: ${#TENANT_ID}"
-          echo "Tenant ID Ends With: ${TENANT_ID: -4}"
+          echo "Tenant ID Ends With: ${TENANT_ID: -14}"
 
           echo "Client ID Length: ${#CLIENT_ID}"
-          echo "Client ID Ends With: ${CLIENT_ID: -4}"
+          echo "Client ID Ends With: ${CLIENT_ID: -14}"
 
           echo "Subscription ID Length: ${#SUBSCRIPTION_ID}"
-          echo "Subscription ID Ends With: ${SUBSCRIPTION_ID: -4}"
+          echo "Subscription ID Ends With: ${SUBSCRIPTION_ID: -14}"
