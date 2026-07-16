@@ -7,13 +7,6 @@ on:
       - develop
       - qa
       - main
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to deploy (feature-verification / develop / qa / main)'
-        required: true
-        type: string
-
 
 jobs:
   verify:
