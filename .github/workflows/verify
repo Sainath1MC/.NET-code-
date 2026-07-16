@@ -1,9 +1,8 @@
-name: Verify Production Secrets and Variables
+name: Verify Production Secrets and Variables.
 
 on:
   push:
     branches:
-      - feature-verification
       - develop
       - qa
       - main
