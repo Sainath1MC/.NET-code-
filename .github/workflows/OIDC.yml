@@ -1,5 +1,5 @@
 
-name: Run Azure Login with OIDC
+name: Run Azure Login 
 on: workflow_dispatch
 
 permissions:
