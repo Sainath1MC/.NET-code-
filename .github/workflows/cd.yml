@@ -7,17 +7,13 @@ on:
         required: true
         type: string
       run_id:
-        required: false
+        required: true
         type: string
   workflow_dispatch:
     inputs:
       branch:
         description: 'Branch to deploy (develop / qa / main)'
         required: true
-        type: string
-      run_id:
-        description: 'Optional build run ID to deploy a specific artifact instead of the latest successful build'
-        required: false
         type: string
 
 
@@ -54,14 +50,8 @@ jobs:
               --limit 1 \
               --json databaseId \
               --jq '.[0].databaseId')
-            if [ -z "$LATEST_RUN_ID" ]; then
-              echo "Error: no successful Build HelloWorld App run found on branch '${{ inputs.branch }}'" >&2
-              exit 1
-            fi
             echo "run_id=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
           fi
-      - name: Show resolved run_id
-        run: echo "Resolved run_id=${{ steps.get-run.outputs.run_id }}"
 
   deploy-dev:
     name: Deploy to development environment
