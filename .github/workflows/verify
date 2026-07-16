@@ -1,10 +1,16 @@
 name: Verify Production Secrets and Variables
 
 on:
+  push:
+    branches:
+      - feature-verification
+      - develop
+      - qa
+      - main
   workflow_dispatch:
     inputs:
       branch:
-description: 'Branch to deploy (feature-verification / develop / qa / main)'
+        description: 'Branch to deploy (feature-verification / develop / qa / main)'
         required: true
         type: string
 
