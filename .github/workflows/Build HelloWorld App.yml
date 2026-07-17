@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate (format)
+    name: Validate (format & restore)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
       - run: dotnet format src/HelloWorld/HelloWorld.csproj
 
   build:
-    name: Build the pipeline
+    name: Build
     runs-on: ubuntu-latest
     needs: validate
     steps:
@@ -56,7 +56,7 @@ jobs:
       - run: dotnet build src/HelloWorld/HelloWorld.csproj -c Release
 
   package:
-    name: Package Artifact to zip
+    name: Package Artifact
     runs-on: ubuntu-latest
     needs: build
     if: success()
