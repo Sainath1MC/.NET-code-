@@ -6,7 +6,8 @@ on:
       branch:
         required: true
         type: string
-      run_id:
+      version:
+        description: 'Version to deploy (e.g. v1.0.5)'
         required: false
         type: string
   workflow_dispatch:
@@ -15,11 +16,10 @@ on:
         description: 'Branch to deploy (develop / qa / main)'
         required: true
         type: string
-      run_id:
-        description: 'Optional build run ID to deploy a specific artifact instead of the latest successful build'
+      version:
+        description: 'Optional exact version to deploy (e.g. v1.0.5). Leave blank to deploy the current pointer for this branch.'
         required: false
         type: string
-
 
 permissions:
   contents: read
@@ -27,59 +27,81 @@ permissions:
   actions: read
 
 jobs:
-  resolve-run-id:
-    name:  Artifact ID
+  # ---------------- Resolve exactly which version+zip to deploy ----------------
+  resolve-version:
+    name: Resolve version and artifact
     runs-on: ubuntu-latest
     outputs:
-      run_id: ${{ steps.get-run.outputs.run_id }}
-      branch: ${{ steps.get-branch.outputs.branch }}
+      branch: ${{ steps.set-branch.outputs.branch }}
+      version: ${{ steps.get-version.outputs.version }}
+      artifact_zip: ${{ steps.get-version.outputs.artifact_zip }}
     steps:
       - name: Set branch value
-        id: get-branch
+        id: set-branch
         run: echo "branch=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"
 
-      - name: Get run_id (from input or latest successful build)
-        id: get-run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ -n "${{ inputs.run_id }}" ]; then
-            echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
-          else
-            LATEST_RUN_ID=$(gh run list \
-              --repo ${{ github.repository }} \
-              --workflow "Build HelloWorld App" \
-              --branch "${{ inputs.branch }}" \
-              --status success \
-              --limit 1 \
-              --json databaseId \
-              --jq '.[0].databaseId')
-            if [ -z "$LATEST_RUN_ID" ]; then
-              echo "Error: no successful Build HelloWorld App run found on branch '${{ inputs.branch }}'" >&2
-              exit 1
-            fi
-            echo "run_id=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Show resolved run_id
-        run: echo "Resolved run_id=${{ steps.get-run.outputs.run_id }}"
+      # Login with the Storage-only identity to read metadata / the current pointer
+      - name: Login to Azure (Storage)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.STORAGE_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.STORAGE_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.STORAGE_AZURE_SUBSCRIPTION_ID }}
 
+      # If an explicit version was passed (normal CI trigger, or rollback), use it directly.
+      # Otherwise (manual dispatch with no version), fall back to metadata/current-<branch>.json
+      - name: Resolve version
+        id: get-version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            az storage blob download \
+              --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
+              --container-name ${{ vars.STORAGE_CONTAINER_NAME }} \
+              --name "metadata/current-${{ inputs.branch }}.json" \
+              --file ./current.json \
+              --auth-mode login
+            VERSION=$(jq -r '.version' ./current.json)
+          fi
+          ARTIFACT_ZIP="${{ vars.ARTIFACT_NAME }}-${VERSION}.zip"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact_zip=$ARTIFACT_ZIP" >> "$GITHUB_OUTPUT"
+          echo "Deploying version: $VERSION ($ARTIFACT_ZIP)"
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout || true
+
+  # ---------------- DEV ----------------
   deploy-dev:
     name: Deploy to development environment
-    needs: resolve-run-id
-    if: ${{ needs.resolve-run-id.outputs.branch == 'develop' }}
+    needs: resolve-version
+    if: ${{ needs.resolve-version.outputs.branch == 'develop' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      # Login with Storage identity + download ZIP from Blob by version (durable, supports rollback)
+      - name: Login to Azure (Storage)
+        uses: azure/login@v2
         with:
-          name: helloworld-artifact
-          path: ./publish
-          repository: ${{ github.repository }}
-          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          client-id: ${{ secrets.STORAGE_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.STORAGE_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.STORAGE_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download versioned ZIP from Blob Storage
+        run: |
+          az storage blob download \
+            --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
+            --container-name ${{ vars.STORAGE_CONTAINER_NAME }} \
+            --name "releases/${{ needs.resolve-version.outputs.artifact_zip }}" \
+            --file "./${{ needs.resolve-version.outputs.artifact_zip }}" \
+            --auth-mode login
+
+      - name: Logout from Azure (Storage)
+        run: az logout || true
+
+      # Existing Function App login/deploy steps
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -91,30 +113,40 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.DEV_FUNCTION_APP_NAME }}
-          package: ./publish
+          package: ./${{ needs.resolve-version.outputs.artifact_zip }}
+
       - name: Logout from Azure
         if: always()
         run: az logout || true
 
+  # ---------------- QA ----------------
   deploy-qa:
     name: Deploy to QA environment
-    needs: resolve-run-id
-    if: ${{ needs.resolve-run-id.outputs.branch == 'qa' }}
+    needs: resolve-version
+    if: ${{ needs.resolve-version.outputs.branch == 'qa' }}
     runs-on: ubuntu-latest
     environment: qa
-      
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - name: Login to Azure (Storage)
+        uses: azure/login@v2
         with:
-          name: helloworld-artifact
-          path: ./publish
-          repository: ${{ github.repository }}
-          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          client-id: ${{ secrets.STORAGE_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.STORAGE_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.STORAGE_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download versioned ZIP from Blob Storage
+        run: |
+          az storage blob download \
+            --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
+            --container-name ${{ vars.STORAGE_CONTAINER_NAME }} \
+            --name "releases/${{ needs.resolve-version.outputs.artifact_zip }}" \
+            --file "./${{ needs.resolve-version.outputs.artifact_zip }}" \
+            --auth-mode login
+
+      - name: Logout from Azure (Storage)
+        run: az logout || true
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -126,29 +158,40 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.QA_FUNCTION_APP_NAME }}
-          package: ./publish
+          package: ./${{ needs.resolve-version.outputs.artifact_zip }}
+
       - name: Logout from Azure
         if: always()
         run: az logout
 
+  # ---------------- PROD (approval gate preserved via environment: Production) ----------------
   deploy-prod:
     name: Deploy to prod environment
-    needs: resolve-run-id
-    if: ${{ needs.resolve-run-id.outputs.branch == 'main' }}
+    needs: resolve-version
+    if: ${{ needs.resolve-version.outputs.branch == 'main' }}
     runs-on: ubuntu-latest
     environment: Production
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - name: Login to Azure (Storage)
+        uses: azure/login@v2
         with:
-          name: helloworld-artifact
-          path: ./publish
-          repository: ${{ github.repository }}
-          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          client-id: ${{ secrets.STORAGE_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.STORAGE_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.STORAGE_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download versioned ZIP from Blob Storage
+        run: |
+          az storage blob download \
+            --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
+            --container-name ${{ vars.STORAGE_CONTAINER_NAME }} \
+            --name "releases/${{ needs.resolve-version.outputs.artifact_zip }}" \
+            --file "./${{ needs.resolve-version.outputs.artifact_zip }}" \
+            --auth-mode login
+
+      - name: Logout from Azure (Storage)
+        run: az logout || true
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -160,7 +203,8 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.PROD_FUNCTION_APP_NAME }}
-          package: ./publish
+          package: ./${{ needs.resolve-version.outputs.artifact_zip }}
+
       - name: Logout from Azure
         if: always()
         run: az logout
