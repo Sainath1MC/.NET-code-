@@ -72,7 +72,7 @@ jobs:
 
       - name: Validate Artifact
         run: |
-          test -d ./artifcats/publish
+          test -d ./artifacts/publish
           ls -la ./artifacts
           ls -la ./artifacts/publish
 
