@@ -56,7 +56,7 @@ jobs:
       - run: dotnet build src/HelloWorld/HelloWorld.csproj -c Release
 
   package:
-    name: Package Artifact to zip
+    name: Package Artifact
     runs-on: ubuntu-latest
     needs: build
     if: success()
@@ -66,21 +66,21 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish and zip
+      - name: Publish artifact content
         run: |
           dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o ./artifacts/publish
-          cd artifacts/publish
-          zip -r ../helloworld-artifact.zip .
 
       - name: Validate Artifact
         run: |
-          ls -la ./artifacts/helloworld-artifact.zip
+          test -d ./artifcats/publish
+          ls -la ./artifacts
+          ls -la ./artifacts/publish
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./artifacts/helloworld-artifact.zip
+          path: ./artifacts/publish/
 
   call-deploy:
     name: Trigger Deploy
