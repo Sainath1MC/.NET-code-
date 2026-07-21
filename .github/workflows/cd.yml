@@ -91,7 +91,7 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.DEV_FUNCTION_APP_NAME }}
-          package: ./publish/helloworld-artifact.zip
+          package: ./publish
       - name: Logout from Azure
         if: always()
         run: az logout || true
@@ -126,7 +126,7 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.QA_FUNCTION_APP_NAME }}
-          package: ./publish/helloworld-artifact.zip
+          package: ./publish
       - name: Logout from Azure
         if: always()
         run: az logout
@@ -160,7 +160,7 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.PROD_FUNCTION_APP_NAME }}
-          package: ./publish/helloworld-artifact.zip
+          package: ./publish
       - name: Logout from Azure
         if: always()
         run: az logout
