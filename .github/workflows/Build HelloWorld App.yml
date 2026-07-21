@@ -111,6 +111,7 @@ jobs:
 
    
       - name: Login to Azure (Storage)
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.STORAGE_AZURE_CLIENT_ID }}
@@ -118,6 +119,7 @@ jobs:
           subscription-id: ${{ secrets.STORAGE_AZURE_SUBSCRIPTION_ID }}
 
       - name: Upload ZIP to Azure Blob Storage
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
         run: |
           az storage blob upload \
             --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
@@ -129,6 +131,7 @@ jobs:
 
  
       - name: Generate metadata
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
         run: |
           cat > metadata.json << EOF
           {
@@ -143,6 +146,7 @@ jobs:
           cat metadata.json
 
       - name: Upload versioned metadata to Blob
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
         run: |
           az storage blob upload \
             --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
@@ -153,6 +157,7 @@ jobs:
             --overwrite false
 
       - name: Upload current.json pointer for this branch
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
         run: |
           az storage blob upload \
             --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
@@ -180,7 +185,7 @@ jobs:
   call-deploy:
     name: Trigger Deploy
     needs: package
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa')
     uses: ./.github/workflows/cd.yml
     with:
       branch: ${{ github.ref_name }}
