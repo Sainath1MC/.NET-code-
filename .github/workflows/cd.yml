@@ -92,11 +92,11 @@ jobs:
               exit 1
             fi
 
-            TAG_REF=$(gh api --silent "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" --jq '.object.sha')
-            TAG_TYPE=$(gh api --silent "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" --jq '.object.type')
+            TAG_REF=$(gh api "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" | jq -r '.object.sha')
+            TAG_TYPE=$(gh api "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" | jq -r '.object.type')
 
             if [ "$TAG_TYPE" = "tag" ]; then
-              COMMIT_SHA=$(gh api --silent "/repos/${{ github.repository }}/git/tags/${TAG_REF}" --jq '.object.sha')
+              COMMIT_SHA=$(gh api "/repos/${{ github.repository }}/git/tags/${TAG_REF}" | jq -r '.object.sha')
             else
               COMMIT_SHA="$TAG_REF"
             fi

@@ -64,6 +64,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: success()
+    outputs:
+      semantic_version: ${{ steps.semantic-meta.outputs.semantic_version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -101,7 +103,7 @@ jobs:
     if: github.event_name == 'push'
     uses: ./.github/workflows/cd.yml
     with:
-      branch: ${{ github.ref_name }}
+      branch: ${{ github.event.inputs.branch || github.ref_name }}
       run_id: ${{ github.run_id }}
       semantic_version: ${{ needs.package.outputs.semantic_version || github.event.inputs.semantic_version }}
     secrets: inherit
