@@ -7,15 +7,37 @@ on:
         required: true
         type: string
       run_id:
-        required: true
+        required: false
+        type: string
+      semantic_version:
+        required: false
         type: string
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch to deploy (develop / qa / main)'
+      target_environment:
+        description: 'Target environment to deploy (develop / qa / main)'
         required: true
+        type: choice
+        options:
+          - develop
+          - qa
+          - main
+      source_type:
+        description: 'Select how the artifact should be resolved for rollback/manual deploy'
+        required: true
+        type: choice
+        options:
+          - latest_successful_build
+          - run_id
+          - semantic_version
+      run_id:
+        description: 'Optional GitHub run_id for manual rollback deployment'
+        required: false
         type: string
-
+      semantic_version:
+        description: 'Optional semantic version tag to resolve from release tags for rollback deployment'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -24,7 +46,7 @@ permissions:
 
 jobs:
   resolve-run-id:
-    name:  Artifact ID
+    name: Resolve artifact source
     runs-on: ubuntu-latest
     outputs:
       run_id: ${{ steps.get-run.outputs.run_id }}
@@ -32,26 +54,86 @@ jobs:
     steps:
       - name: Set branch value
         id: get-branch
-        run: echo "branch=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"
+        run: |
+          TARGET_ENVIRONMENT="${{ inputs.target_environment || inputs.branch }}"
+          case "$TARGET_ENVIRONMENT" in
+            develop) echo "branch=develop" >> "$GITHUB_OUTPUT" ;;
+            qa) echo "branch=qa" >> "$GITHUB_OUTPUT" ;;
+            main) echo "branch=main" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unsupported deploy target: $TARGET_ENVIRONMENT"; exit 1 ;;
+          esac
 
-      - name: Get run_id (from input or latest successful build)
+      - name: Resolve run_id from selected source
         id: get-run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          BRANCH="${{ steps.get-branch.outputs.branch }}"
+          SOURCE_TYPE="${{ inputs.source_type }}"
+
+          if [ -z "$SOURCE_TYPE" ]; then
+            SOURCE_TYPE="latest_successful_build"
+          fi
+
+          if [ "$SOURCE_TYPE" = "run_id" ]; then
+            RUN_ID="${{ inputs.run_id }}"
+            if [ -z "$RUN_ID" ]; then
+              echo "run_id is required when source_type is run_id" >&2
+              exit 1
+            fi
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$SOURCE_TYPE" = "semantic_version" ]; then
+            VERSION_TAG="${{ inputs.semantic_version }}"
+            if [ -z "$VERSION_TAG" ]; then
+              echo "semantic_version is required when source_type is semantic_version" >&2
+              exit 1
+            fi
+
+            TAG_REF=$(gh api --silent "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" --jq '.object.sha')
+            TAG_TYPE=$(gh api --silent "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" --jq '.object.type')
+
+            if [ "$TAG_TYPE" = "tag" ]; then
+              COMMIT_SHA=$(gh api --silent "/repos/${{ github.repository }}/git/tags/${TAG_REF}" --jq '.object.sha')
+            else
+              COMMIT_SHA="$TAG_REF"
+            fi
+
+            RUN_ID=$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow "Build HelloWorld App" \
+              --branch "$BRANCH" \
+              --status success \
+              --limit 100 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$COMMIT_SHA\") | .databaseId" | head -n 1)
+
+            if [ -z "$RUN_ID" ]; then
+              echo "No successful run found for tag $VERSION_TAG on branch $BRANCH" >&2
+              exit 1
+            fi
+
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [ -n "${{ inputs.run_id }}" ]; then
             echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
-          else
-            LATEST_RUN_ID=$(gh run list \
-              --repo ${{ github.repository }} \
-              --workflow "Build HelloWorld App" \
-              --branch "${{ inputs.branch }}" \
-              --status success \
-              --limit 1 \
-              --json databaseId \
-              --jq '.[0].databaseId')
-            echo "run_id=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          LATEST_RUN_ID=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "Build HelloWorld App" \
+            --branch "$BRANCH" \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+
+          echo "run_id=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
 
   deploy-dev:
     name: Deploy to development environment
@@ -92,7 +174,6 @@ jobs:
     if: ${{ needs.resolve-run-id.outputs.branch == 'qa' }}
     runs-on: ubuntu-latest
     environment: qa
-      
 
     steps:
       - name: Checkout code
@@ -140,7 +221,7 @@ jobs:
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v4
         with:
           client-id: ${{ secrets.Prod_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.Prod_AZURE_TENANT_ID }}
