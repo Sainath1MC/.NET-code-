@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate (format & restore).
+    name: Validate 
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
