@@ -18,6 +18,10 @@ on:
         description: 'Branch to build (develop / qa / main)'
         required: true
         type: string
+      semantic_version:
+        description: 'Optional semantic version tag '
+        required: false
+        type: string
 
 
 permissions:
@@ -69,7 +73,15 @@ jobs:
       - name: Publish 
         run: |
           dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o ./artifacts/publish
-         
+
+      - name: Set semantic version metadata
+        id: semantic-meta
+        run: |
+          VERSION_TAG="${{ github.event.inputs.semantic_version }}"
+          if [ -z "$VERSION_TAG" ]; then
+            VERSION_TAG="v1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "semantic_version=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Validate Artifact
         run: |
@@ -91,4 +103,5 @@ jobs:
     with:
       branch: ${{ github.ref_name }}
       run_id: ${{ github.run_id }}
+      semantic_version: ${{ needs.package.outputs.semantic_version || github.event.inputs.semantic_version }}
     secrets: inherit
