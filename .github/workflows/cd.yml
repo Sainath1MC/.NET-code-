@@ -7,17 +7,13 @@ on:
         required: true
         type: string
       run_id:
-        required: false
+        required: true
         type: string
   workflow_dispatch:
     inputs:
       branch:
         description: 'Branch to deploy (develop / qa / main)'
         required: true
-        type: string
-      run_id:
-        description: 'Optional build run ID to deploy a specific artifact instead of the latest successful build'
-        required: false
         type: string
 
 
@@ -54,14 +50,8 @@ jobs:
               --limit 1 \
               --json databaseId \
               --jq '.[0].databaseId')
-            if [ -z "$LATEST_RUN_ID" ]; then
-              echo "Error: no successful Build HelloWorld App run found on branch '${{ inputs.branch }}'" >&2
-              exit 1
-            fi
             echo "run_id=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
           fi
-      - name: Show resolved run_id
-        run: echo "Resolved run_id=${{ steps.get-run.outputs.run_id }}"
 
   deploy-dev:
     name: Deploy to development environment
@@ -76,7 +66,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./publish
+          path: ./artifacts/publish/
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -91,7 +81,7 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.DEV_FUNCTION_APP_NAME }}
-          package: ./publish/helloworld-artifact.zip
+          package: ./artifacts/publish/
       - name: Logout from Azure
         if: always()
         run: az logout || true
@@ -111,7 +101,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./publish
+          path: ./artifacts/publish/
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -126,7 +116,7 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.QA_FUNCTION_APP_NAME }}
-          package: ./publish/helloworld-artifact.zip
+          package: ./artifacts/publish/
       - name: Logout from Azure
         if: always()
         run: az logout
@@ -145,7 +135,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./publish
+          path: ./artifacts/publish/
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -160,7 +150,7 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.PROD_FUNCTION_APP_NAME }}
-          package: ./publish/helloworld-artifact.zip
+          package: ./artifacts/publish/
       - name: Logout from Azure
         if: always()
         run: az logout

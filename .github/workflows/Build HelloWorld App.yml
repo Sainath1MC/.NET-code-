@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate (format & restore)
+    name: Validate 
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,21 +66,22 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish and zip
+      - name: Publish 
         run: |
           dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o ./artifacts/publish
-          cd artifacts/publish
-          zip -r ../helloworld-artifact.zip .
+         
 
       - name: Validate Artifact
         run: |
-          ls -la ./artifacts/helloworld-artifact.zip
+          ls -la ./artifacts
+          ls -la ./artifacts/publish
+          test -d ./artifacts/publish 
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./artifacts/helloworld-artifact.zip
+          path: ./artifacts/publish/
 
   call-deploy:
     name: Trigger Deploy
