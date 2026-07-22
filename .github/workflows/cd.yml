@@ -87,18 +87,39 @@ jobs:
 
           if [ "$SOURCE_TYPE" = "semantic_version" ]; then
             VERSION_TAG="${{ inputs.semantic_version }}"
+            VERSION_TAG="$(printf '%s' "$VERSION_TAG" | tr -d '[:space:]')"
+
             if [ -z "$VERSION_TAG" ]; then
               echo "semantic_version is required when source_type is semantic_version" >&2
               exit 1
             fi
 
-            TAG_REF=$(gh api --silent "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" --jq '.object.sha')
-            TAG_TYPE=$(gh api --silent "/repos/${{ github.repository }}/git/ref/tags/${VERSION_TAG}" --jq '.object.type')
+            ENCODED_TAG="$(python -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["VERSION_TAG"]))')"
+
+            TAG_REF=$(gh api -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/git/ref/tags/${ENCODED_TAG}" \
+              --jq '.object.sha' 2>/dev/null || true)
+
+            if [ -z "$TAG_REF" ]; then
+              echo "Tag $VERSION_TAG was not found in the repository" >&2
+              exit 1
+            fi
+
+            TAG_TYPE=$(gh api -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/git/ref/tags/${ENCODED_TAG}" \
+              --jq '.object.type' 2>/dev/null || true)
 
             if [ "$TAG_TYPE" = "tag" ]; then
-              COMMIT_SHA=$(gh api --silent "/repos/${{ github.repository }}/git/tags/${TAG_REF}" --jq '.object.sha')
+              COMMIT_SHA=$(gh api -H "Accept: application/vnd.github+json" \
+                "/repos/${{ github.repository }}/git/tags/${TAG_REF}" \
+                --jq '.object.sha' 2>/dev/null || true)
             else
               COMMIT_SHA="$TAG_REF"
+            fi
+
+            if [ -z "$COMMIT_SHA" ]; then
+              echo "Failed to resolve commit SHA for tag $VERSION_TAG" >&2
+              exit 1
             fi
 
             RUN_ID=$(gh run list \
@@ -221,7 +242,7 @@ jobs:
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Login to Azure
-        uses: azure/login@v4
+        uses: azure/login@v2
         with:
           client-id: ${{ secrets.Prod_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.Prod_AZURE_TENANT_ID }}
