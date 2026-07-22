@@ -6,13 +6,12 @@ on:
       - main
       - develop
       - qa
-      - feature-1
-      
   pull_request:
     branches:
       - main
       - develop
       - qa
+
   workflow_dispatch:
     inputs:
       branch:
@@ -20,21 +19,27 @@ on:
         required: true
         type: string
 
+
 permissions:
   id-token: write
-  contents: write
+  contents: read
   actions: read
   security-events: write
 
+
+# CI STAGE : validate code formatting and restore dependencies
+
 jobs:
   validate:
-    name: Validate (format & restore)
+    name: Validate 
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
       - run: dotnet restore src/HelloWorld/HelloWorld.csproj
       - run: dotnet format src/HelloWorld/HelloWorld.csproj
 
@@ -55,139 +60,35 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: success()
-
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      artifact_zip: ${{ steps.version.outputs.artifact_zip }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # full git history required so tag push works correctly
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish artifact content
+      - name: Publish 
         run: |
           dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o ./artifacts/publish
+         
 
       - name: Validate Artifact
         run: |
-          test -d ./artifacts/publish
           ls -la ./artifacts
           ls -la ./artifacts/publish
+          test -d ./artifacts/publish 
 
-      - name: Generate version and artifact filename
-        id: version
-        run: |
-          VERSION="v1.0.${{ github.run_number }}"
-          ARTIFACT_ZIP="${{ vars.ARTIFACT_NAME }}-${VERSION}.zip"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "artifact_zip=$ARTIFACT_ZIP" >> "$GITHUB_OUTPUT"
-          echo "Resolved version: $VERSION"
-          echo "Resolved artifact filename: $ARTIFACT_ZIP"
-
-      - name: Create ZIP package
-        run: |
-          cd ./artifacts/publish
-          zip -r "../../${{ steps.version.outputs.artifact_zip }}" .
-          cd ../..
-          ls -la ./${{ steps.version.outputs.artifact_zip }}
-
- 
-      - name: Upload artifact to GitHub Actions
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: helloworld-artifact
           path: ./artifacts/publish/
 
-      - name: Upload versioned ZIP to GitHub Actions
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.version.outputs.artifact_zip }}
-          path: ./${{ steps.version.outputs.artifact_zip }}
-          retention-days: 90
-
-   
-      - name: Login to Azure (Storage)
-        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.STORAGE_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.STORAGE_AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.STORAGE_AZURE_SUBSCRIPTION_ID }}
-
-      - name: Upload ZIP to Azure Blob Storage
-        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
-        run: |
-          az storage blob upload \
-            --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
-            --container-name ${{ vars.STORAGE_CONTAINER_NAME }} \
-            --name "releases/${{ steps.version.outputs.artifact_zip }}" \
-            --file "./${{ steps.version.outputs.artifact_zip }}" \
-            --auth-mode login \
-            --overwrite false
-
- 
-      - name: Generate metadata
-        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
-        run: |
-          cat > metadata.json << EOF
-          {
-            "version": "${{ steps.version.outputs.version }}",
-            "artifact": "${{ steps.version.outputs.artifact_zip }}",
-            "commitId": "${{ github.sha }}",
-            "branch": "${{ github.ref_name }}",
-            "deploymentDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "githubRunId": "${{ github.run_id }}"
-          }
-          EOF
-          cat metadata.json
-
-      - name: Upload versioned metadata to Blob
-        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
-        run: |
-          az storage blob upload \
-            --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
-            --container-name ${{ vars.STORAGE_CONTAINER_NAME }} \
-            --name "metadata/${{ steps.version.outputs.version }}.json" \
-            --file "./metadata.json" \
-            --auth-mode login \
-            --overwrite false
-
-      - name: Upload current.json pointer for this branch
-        if: ${{ github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa' }}
-        run: |
-          az storage blob upload \
-            --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} \
-            --container-name ${{ vars.STORAGE_CONTAINER_NAME }} \
-            --name "metadata/current-${{ github.ref_name }}.json" \
-            --file "./metadata.json" \
-            --auth-mode login \
-            --overwrite true
-
-      - name: Logout from Azure
-        if: always()
-        run: az logout || true
-
-    
-      - name: Create and push release tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG_NAME="release-${{ github.ref_name }}-${{ steps.version.outputs.version }}"
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
-          echo "Created tag: $TAG_NAME"
-
-
   call-deploy:
     name: Trigger Deploy
     needs: package
-    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'develop' || github.ref_name == 'qa')
+    if: github.event_name == 'push'
     uses: ./.github/workflows/cd.yml
     with:
       branch: ${{ github.ref_name }}
-      version: ${{ needs.package.outputs.version }}
+      run_id: ${{ github.run_id }}
     secrets: inherit
