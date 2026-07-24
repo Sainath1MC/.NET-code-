@@ -10,68 +10,210 @@ on:
         required: false
         type: string
 
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Target environment to deploy (develop / qa / main)'
+        required: true
+        type: choice
+        options:
+          - develop
+          - qa
+          - main
+
+      source_type:
+        description: 'Select how the artifact should be resolved for rollback/manual deploy'
+        required: true
+        type: choice
+        options:
+          - latest_successful_build
+          - run_id
+      run_id:
+        description: 'Optional GitHub run_id for manual rollback deployment'
+        required: false
+        type: string
+
 permissions:
-  contents: write
+  contents: read
   id-token: write
   actions: read
 
 jobs:
   resolve-run-id:
-    # <-- Use your existing resolve-run-id job unchanged
-
-  create-version-tag:
-    name: Create Semantic Version
-    needs: resolve-run-id
-    if: needs.resolve-run-id.outputs.branch == 'qa' || needs.resolve-run-id.outputs.branch == 'main'
+    name: Resolve artifact source
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      run_id: ${{ steps.get-run.outputs.run_id }}
+      branch: ${{ steps.get-branch.outputs.branch }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - run: git fetch --tags
-      - id: version
-        shell: bash
+      - name: Set branch value
+        id: get-branch
         run: |
-          # Determine latest production tag
-          LAST=$(git tag --list 'v*' --sort=-v:refname | grep -v '\-qa' | head -1)
-          [ -z "$LAST" ] && LAST=v1.0.0
-          VER=${LAST#v}
-          IFS='.' read MA MI PA <<< "$VER"
-          PA=$((PA+1))
-          if [ "${{ needs.resolve-run-id.outputs.branch }}" = "qa" ]; then
-            COUNT=$(git tag --list "v${MA}.${MI}.${PA}-qa.*" | wc -l)
-            TAG="v${MA}.${MI}.${PA}-qa.$((COUNT+1))"
-          else
-            TAG="v${MA}.${MI}.${PA}"
+          TARGET_ENVIRONMENT="${{ inputs.target_environment || inputs.branch }}"
+          case "$TARGET_ENVIRONMENT" in
+            develop) echo "branch=develop" >> "$GITHUB_OUTPUT" ;;
+            qa) echo "branch=qa" >> "$GITHUB_OUTPUT" ;;
+            main) echo "branch=main" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unsupported deploy target: $TARGET_ENVIRONMENT"; exit 1 ;;
+          esac
+
+      - name: Resolve run_id from selected source
+        id: get-run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.get-branch.outputs.branch }}"
+          SOURCE_TYPE="${{ inputs.source_type }}"
+
+          if [ -z "$SOURCE_TYPE" ]; then
+            SOURCE_TYPE="latest_successful_build"
           fi
-          echo "version=$TAG" >> $GITHUB_OUTPUT
-      - run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git tag ${{ steps.version.outputs.version }}
-          git push origin ${{ steps.version.outputs.version }}
-      - if: needs.resolve-run-id.outputs.branch == 'main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          generate_release_notes: true
+
+          if [ "$SOURCE_TYPE" = "run_id" ]; then
+            RUN_ID="${{ inputs.run_id }}"
+            if [ -z "$RUN_ID" ]; then
+              echo "run_id is required when source_type is run_id" >&2
+              exit 1
+            fi
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${{ inputs.run_id }}" ]; then
+            echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LATEST_RUN_ID=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "Build HelloWorld App" \
+            --branch "$BRANCH" \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+
+          echo "run_id=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
 
   deploy-dev:
+    name: Deploy to development environment
     needs: resolve-run-id
-    # <-- Keep your existing deployment job unchanged
+    if: ${{ needs.resolve-run-id.outputs.branch == 'develop' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # CHANGED: download into a plain folder (./artifacts), not ./artifacts/publish/
+      # because ci.yml now uploads a single ZIP file (helloworld-artifact.zip) as the artifact,
+      # not an extracted folder of app files.
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helloworld-artifact
+          path: ./artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded ZIP
+        run: ls -la ./artifacts/helloworld-artifact.zip
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.DEV_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.DEV_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.DEV_AZURE_SUBSCRIPTION_ID }}
+
+      # CHANGED: package now points directly to the zip file, not a folder
+      - name: Deploy to Azure Function App (DEV)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.DEV_FUNCTION_APP_NAME }}
+          package: ./artifacts/helloworld-artifact.zip
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout || true
 
   deploy-qa:
-    needs: [resolve-run-id, create-version-tag]
-    # <-- Keep existing QA deployment steps unchanged
-    # Add:
-    # - run: echo "Deploying ${{ needs.create-version-tag.outputs.version }}"
+    name: Deploy to QA environment
+    needs: resolve-run-id
+    if: ${{ needs.resolve-run-id.outputs.branch == 'qa' }}
+    runs-on: ubuntu-latest
+    environment: qa
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helloworld-artifact
+          path: ./artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded ZIP
+        run: ls -la ./artifacts/helloworld-artifact.zip
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.QA_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.QA_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.QA_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Function App (QA)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.QA_FUNCTION_APP_NAME }}
+          package: ./artifacts/helloworld-artifact.zip
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout
 
   deploy-prod:
-    needs: [resolve-run-id, create-version-tag]
-    # <-- Keep existing PROD deployment steps unchanged
-    # Add:
-    # - run: echo "Deploying ${{ needs.create-version-tag.outputs.version }}"
+    name: Deploy to prod environment
+    needs: resolve-run-id
+    if: ${{ needs.resolve-run-id.outputs.branch == 'main' }}
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helloworld-artifact
+          path: ./artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.resolve-run-id.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded ZIP
+        run: ls -la ./artifacts/helloworld-artifact.zip
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.Prod_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.Prod_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.Prod_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Function App (Prod)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.PROD_FUNCTION_APP_NAME }}
+          package: ./artifacts/helloworld-artifact.zip
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout
