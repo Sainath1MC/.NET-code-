@@ -1,0 +1,134 @@
+name: Build HelloWorld App.
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - qa
+  pull_request:
+    branches:
+      - main
+      - develop
+      - qa
+
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build (develop / qa / main)'
+        required: true
+        type: string
+      semantic_version:
+        description: 'Optional semantic version tag '
+        required: false
+        type: string
+
+
+permissions:
+  id-token: write
+  contents: write
+  actions: read
+  security-events: write
+
+
+# CI STAGE : validate code formatting and restore dependencies
+
+jobs:
+  validate:
+    name: Validate 
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - run: dotnet restore src/HelloWorld/HelloWorld.csproj
+      - run: dotnet format src/HelloWorld/HelloWorld.csproj
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore src/HelloWorld/HelloWorld.csproj
+      - run: dotnet build src/HelloWorld/HelloWorld.csproj -c Release
+
+  package:
+    name: Package Artifact
+    runs-on: ubuntu-latest
+    needs: build
+    if: success()
+    outputs:
+      semantic_version: ${{ steps.semantic-meta.outputs.semantic_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish 
+        run: |
+          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o ./artifacts/publish
+
+      - name: Set semantic version metadata
+        id: semantic-meta
+        run: |
+          VERSION_TAG="${{ github.event.inputs.semantic_version }}"
+          if [ -z "$VERSION_TAG" ]; then
+            VERSION_TAG="v1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          VERSION_TAG="$(printf '%s' "$VERSION_TAG" | tr -d '[:space:]')"
+          echo "semantic_version=$VERSION_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update Git semantic tag
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          VERSION_TAG: ${{ steps.semantic-meta.outputs.semantic_version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force
+
+          if git rev-parse -q --verify "refs/tags/$VERSION_TAG" >/dev/null; then
+            git tag -f "$VERSION_TAG"
+          else
+            git tag "$VERSION_TAG"
+          fi
+
+          git push origin "$VERSION_TAG" --force
+
+      - name: Validate Artifact
+        run: |
+          ls -la ./artifacts
+          ls -la ./artifacts/publish
+          test -d ./artifacts/publish 
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helloworld-artifact
+          path: ./artifacts/publish/
+
+  call-deploy:
+    name: Trigger Deploy
+    needs: package
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/cd.yml
+    with:
+      branch: ${{ github.event.inputs.branch || github.ref_name }}
+      run_id: ${{ github.run_id }}
+      semantic_version: ${{ needs.package.outputs.semantic_version || github.event.inputs.semantic_version }}
+    secrets: inherit
