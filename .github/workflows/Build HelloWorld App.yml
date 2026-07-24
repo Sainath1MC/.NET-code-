@@ -6,6 +6,7 @@ on:
       - main
       - develop
       - qa
+      - feature
   pull_request:
     branches:
       - main
@@ -18,15 +19,11 @@ on:
         description: 'Branch to build (develop / qa / main)'
         required: true
         type: string
-      semantic_version:
-        description: 'Optional semantic version tag '
-        required: false
-        type: string
 
 
 permissions:
   id-token: write
-  contents: write
+  contents: read
   actions: read
   security-events: write
 
@@ -35,12 +32,10 @@ permissions:
 
 jobs:
   validate:
-    name: Validate 
+    name: Validate (format & restore)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -55,8 +50,6 @@ jobs:
     needs: validate
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -68,59 +61,25 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: success()
-    outputs:
-      semantic_version: ${{ steps.semantic-meta.outputs.semantic_version }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish 
+      - name: Publish and zip
         run: |
           dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o ./artifacts/publish
-
-      - name: Set semantic version metadata
-        id: semantic-meta
-        run: |
-          VERSION_TAG="${{ github.event.inputs.semantic_version }}"
-          if [ -z "$VERSION_TAG" ]; then
-            VERSION_TAG="v1.0.${GITHUB_RUN_NUMBER}"
-          fi
-          VERSION_TAG="$(printf '%s' "$VERSION_TAG" | tr -d '[:space:]')"
-          echo "semantic_version=$VERSION_TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Create or update Git semantic tag
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        env:
-          VERSION_TAG: ${{ steps.semantic-meta.outputs.semantic_version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch --tags --force
-
-          if git rev-parse -q --verify "refs/tags/$VERSION_TAG" >/dev/null; then
-            git tag -f "$VERSION_TAG"
-          else
-            git tag "$VERSION_TAG"
-          fi
-
-          git push origin "$VERSION_TAG" --force
-
+          cd artifacts/publish
+          zip -r ../helloworld-artifact.zip .
       - name: Validate Artifact
         run: |
-          ls -la ./artifacts
-          ls -la ./artifacts/publish
-          test -d ./artifacts/publish 
-
+          ls -la ./artifacts/helloworld-artifact.zip
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./artifacts/publish/
+          path: ./artifacts/helloworld-artifact.zip
 
   call-deploy:
     name: Trigger Deploy
@@ -128,7 +87,6 @@ jobs:
     if: github.event_name == 'push'
     uses: ./.github/workflows/cd.yml
     with:
-      branch: ${{ github.event.inputs.branch || github.ref_name }}
+      branch: ${{ github.ref_name }}
       run_id: ${{ github.run_id }}
-      semantic_version: ${{ needs.package.outputs.semantic_version || github.event.inputs.semantic_version }}
     secrets: inherit

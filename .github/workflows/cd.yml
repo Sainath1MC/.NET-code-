@@ -9,9 +9,7 @@ on:
       run_id:
         required: false
         type: string
-      semantic_version:
-        required: false
-        type: string
+
   workflow_dispatch:
     inputs:
       target_environment:
@@ -22,6 +20,7 @@ on:
           - develop
           - qa
           - main
+
       source_type:
         description: 'Select how the artifact should be resolved for rollback/manual deploy'
         required: true
@@ -29,13 +28,8 @@ on:
         options:
           - latest_successful_build
           - run_id
-          - semantic_version
       run_id:
         description: 'Optional GitHub run_id for manual rollback deployment'
-        required: false
-        type: string
-      semantic_version:
-        description: 'Optional semantic version tag to resolve from release tags for rollback deployment'
         required: false
         type: string
 
@@ -85,61 +79,6 @@ jobs:
             exit 0
           fi
 
-          if [ "$SOURCE_TYPE" = "semantic_version" ]; then
-            VERSION_TAG="${{ inputs.semantic_version }}"
-            VERSION_TAG="$(printf '%s' "$VERSION_TAG" | tr -d '[:space:]')"
-
-            if [ -z "$VERSION_TAG" ]; then
-              echo "semantic_version is required when source_type is semantic_version" >&2
-              exit 1
-            fi
-
-            ENCODED_TAG="$(python -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["VERSION_TAG"]))')"
-
-            TAG_REF=$(gh api -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/git/ref/tags/${ENCODED_TAG}" \
-              --jq '.object.sha' 2>/dev/null || true)
-
-            if [ -z "$TAG_REF" ]; then
-              echo "Tag $VERSION_TAG was not found in the repository" >&2
-              exit 1
-            fi
-
-            TAG_TYPE=$(gh api -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/git/ref/tags/${ENCODED_TAG}" \
-              --jq '.object.type' 2>/dev/null || true)
-
-            if [ "$TAG_TYPE" = "tag" ]; then
-              COMMIT_SHA=$(gh api -H "Accept: application/vnd.github+json" \
-                "/repos/${{ github.repository }}/git/tags/${TAG_REF}" \
-                --jq '.object.sha' 2>/dev/null || true)
-            else
-              COMMIT_SHA="$TAG_REF"
-            fi
-
-            if [ -z "$COMMIT_SHA" ]; then
-              echo "Failed to resolve commit SHA for tag $VERSION_TAG" >&2
-              exit 1
-            fi
-
-            RUN_ID=$(gh run list \
-              --repo "${{ github.repository }}" \
-              --workflow "Build HelloWorld App" \
-              --branch "$BRANCH" \
-              --status success \
-              --limit 100 \
-              --json databaseId,headSha \
-              --jq ".[] | select(.headSha == \"$COMMIT_SHA\") | .databaseId" | head -n 1)
-
-            if [ -z "$RUN_ID" ]; then
-              echo "No successful run found for tag $VERSION_TAG on branch $BRANCH" >&2
-              exit 1
-            fi
-
-            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           if [ -n "${{ inputs.run_id }}" ]; then
             echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
             exit 0
@@ -165,14 +104,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # CHANGED: download into a plain folder (./artifacts), not ./artifacts/publish/
+      # because ci.yml now uploads a single ZIP file (helloworld-artifact.zip) as the artifact,
+      # not an extracted folder of app files.
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./artifacts/publish/
+          path: ./artifacts
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded ZIP
+        run: ls -la ./artifacts/helloworld-artifact.zip
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -180,11 +127,13 @@ jobs:
           tenant-id: ${{ secrets.DEV_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.DEV_AZURE_SUBSCRIPTION_ID }}
 
+      # CHANGED: package now points directly to the zip file, not a folder
       - name: Deploy to Azure Function App (DEV)
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.DEV_FUNCTION_APP_NAME }}
-          package: ./artifacts/publish/
+          package: ./artifacts/helloworld-artifact.zip
+
       - name: Logout from Azure
         if: always()
         run: az logout || true
@@ -199,14 +148,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./artifacts/publish/
+          path: ./artifacts
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded ZIP
+        run: ls -la ./artifacts/helloworld-artifact.zip
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -218,7 +172,8 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.QA_FUNCTION_APP_NAME }}
-          package: ./artifacts/publish/
+          package: ./artifacts/helloworld-artifact.zip
+
       - name: Logout from Azure
         if: always()
         run: az logout
@@ -233,14 +188,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: helloworld-artifact
-          path: ./artifacts/publish/
+          path: ./artifacts
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-run-id.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded ZIP
+        run: ls -la ./artifacts/helloworld-artifact.zip
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -252,7 +212,8 @@ jobs:
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ vars.PROD_FUNCTION_APP_NAME }}
-          package: ./artifacts/publish/
+          package: ./artifacts/helloworld-artifact.zip
+
       - name: Logout from Azure
         if: always()
         run: az logout
