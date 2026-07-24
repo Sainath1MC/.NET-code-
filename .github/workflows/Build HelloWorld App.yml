@@ -1,4 +1,4 @@
-name: Build HelloWorld App
+name: Build HelloWorld App.
 
 on:
   push:
