@@ -6,7 +6,8 @@ on:
       - main
       - develop
       - qa
-      - feature
+      - nath
+
   pull_request:
     branches:
       - main
@@ -20,73 +21,106 @@ on:
         required: true
         type: string
 
-
 permissions:
   id-token: write
-  contents: read
+  contents: write          # Required for semantic version tags
   actions: read
   security-events: write
 
-
-# CI STAGE : validate code formatting and restore dependencies
-
 jobs:
-  validate:
-    name: Validate (format & restore)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v4
+  validate:
+    name: Validate (Format & Restore)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - run: dotnet restore src/HelloWorld/HelloWorld.csproj
-      - run: dotnet format src/HelloWorld/HelloWorld.csproj
+      - name: Restore Packages
+        run: dotnet restore src/HelloWorld/HelloWorld.csproj
+
+      - name: Validate Code Formatting
+        run: dotnet format src/HelloWorld/HelloWorld.csproj
+
 
   build:
-    name: Build
+    name: Build Application
     runs-on: ubuntu-latest
     needs: validate
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - run: dotnet restore src/HelloWorld/HelloWorld.csproj
-      - run: dotnet build src/HelloWorld/HelloWorld.csproj -c Release
+
+      - name: Restore Packages
+        run: dotnet restore src/HelloWorld/HelloWorld.csproj
+
+      - name: Build Application
+        run: dotnet build src/HelloWorld/HelloWorld.csproj -c Release --no-restore
+
 
   package:
     name: Package Artifact
     runs-on: ubuntu-latest
     needs: build
-    if: success()
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish and zip
+      - name: Publish Application
         run: |
-          dotnet publish src/HelloWorld/HelloWorld.csproj -c Release -o ./artifacts/publish
+          dotnet publish src/HelloWorld/HelloWorld.csproj \
+            -c Release \
+            -o ./artifacts/publish
+
+      - name: Create ZIP Package
+        run: |
           cd artifacts/publish
           zip -r ../helloworld-artifact.zip .
+
       - name: Validate Artifact
         run: |
+          echo "Generated Artifact:"
           ls -la ./artifacts/helloworld-artifact.zip
-      - name: Upload artifact
+
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: helloworld-artifact
           path: ./artifacts/helloworld-artifact.zip
+          if-no-files-found: error
+          retention-days: 30
+
 
   call-deploy:
-    name: Trigger Deploy
+    name: Trigger Deployment Pipeline
     needs: package
+
     if: github.event_name == 'push'
+
     uses: ./.github/workflows/cd.yml
+
     with:
       branch: ${{ github.ref_name }}
       run_id: ${{ github.run_id }}
+
     secrets: inherit
