@@ -108,7 +108,7 @@ jobs:
           name: helloworld-artifact
           path: ./artifacts/helloworld-artifact.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 60
 
 
   call-deploy:
